@@ -241,7 +241,11 @@
 #endif
 
 
-#define WITH_GCC (defined(__GNUC__) || defined(__clang__))
+#if defined(__GNUC__) || defined(__clang__)
+  #define WITH_GCC 1
+#else
+  #define WITH_GCC 0
+#endif
 
 /* in case mus-config.h forgets these */
 #ifdef _MSC_VER
@@ -286,7 +290,11 @@
 #else
   /* in Snd these are in mus-config.h */
   #ifndef MUS_CONFIG_H_LOADED
-    #define snprintf _snprintf 
+    /* Only define snprintf for older MSVC versions (before VS 2015 / MSVC 1900) */
+    #if _MSC_VER < 1900
+      #define snprintf _snprintf 
+    #endif
+    
     #if _MSC_VER > 1200
       #define _CRT_SECURE_NO_DEPRECATE 1
       #define _CRT_NONSTDC_NO_DEPRECATE 1
@@ -28506,6 +28514,24 @@ static FILE *search_load_path(s7_scheme *sc, const char *name)
   return(NULL);
 }
 
+s7_pointer s7_load_embedded(s7_scheme *sc, const char *src, const char *filename)
+{
+    // Make a port from the embedded string
+    s7_pointer port = s7_open_input_string(sc, src);
+    port_file_number(port) = remember_file_name(sc, filename);
+
+    push_input_port(sc, port);
+    sc->envir = sc->nil;
+    push_stack(sc, OP_LOAD_RETURN_IF_EOF, port, sc->code);
+
+    eval(sc, OP_READ_INTERNAL);
+
+    pop_input_port(sc);
+    if (is_input_port(port))
+        s7_close_input_port(sc, port);
+
+    return sc->value;
+}
 
 s7_pointer s7_load_with_environment(s7_scheme *sc, const char *filename, s7_pointer e)
 {
@@ -73496,9 +73522,7 @@ static s7_pointer g_is_proper_list(s7_scheme *sc, s7_pointer args)
 }
 
 
-#ifndef _MSC_VER
-/* gdb stacktrace decoding */
-
+/* Also used by object->let on Windows. */
 static bool is_decodable(s7_scheme *sc, s7_pointer p)
 {
   int i;
@@ -73538,6 +73562,8 @@ static bool is_decodable(s7_scheme *sc, s7_pointer p)
   return(false);
 }
 
+#ifndef _MSC_VER
+/* gdb stacktrace decoding */
 char *s7_decode_bt(void)
 {
   FILE *fp;
